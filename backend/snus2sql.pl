@@ -17,10 +17,10 @@ my %Options=(
   db_user     =>"spacenearer",
   db_pass     =>"",
   data_url    =>"http://spacenear.us/tracker/data.php",
+  max_records =>5,
   lock_file   =>"/tmp/snus2sql.pid"
 );
 
-# LOCK File
 if  ( -f $Options{'lock_file'}){
 	print "A process is already running\n";
 	exit -1;
@@ -39,10 +39,9 @@ my $loop=1;
 $SIG{HUP}= \&catch_hup;
 $SIG{INT}= \&catch_hup;
 
-# Loop start
-
 while ($loop){
 	my $dbh = DBI->connect("DBI:mysql:host=$Options{'db_host'};database=$Options{'db_database'}", $Options{'db_user'},$Options{'db_pass'});
+	# TODO if lastpos=0 we should get the last value from the DB
 
 	# Prep SQL Statements
 	my $addPosition=$dbh->prepare("insert into positions values (?,?,?,?,MICROSECOND(?)/1e6,?,MICROSECOND(?)/1e6,?,?,?,?,?,?,?,?)");
@@ -51,10 +50,7 @@ while ($loop){
 
 	#DBI->trace( 2, 'dbitrace.log' );
 	if ($dbh){
-	# position_id: lastPosId,
-	# max_positions: 0
-	# GET http://spacenear.us/tracker/data.php?format=json&position_id=3952824&max_positions=5 [HTTP/1.1 200 OK 61ms]
-		my $json = get($Options{'data_url'}."?format=json&position_id=".$lastpos."&max_positions=4");		 # or die ("Could not get " . $Options{'data_url'});
+		my $json = get($Options{'data_url'}."?format=json&position_id=".$lastpos."&max_positions=".$Options{'max_records'});
 		if ($json){
 			my $json_out=decode_json($json);
 			my @positions=@{$json_out->{'positions'}{'position'}};
@@ -77,8 +73,13 @@ while ($loop){
 					$pos->{'picture'},
 					$pos->{'temp_inside'},
 					$pos->{'sequence'});
+				my %data=%{decode_json($pos->{'data'})};
+				for (keys %data){
+					$addData->execute($pos->{'position_id'},$_,$data{$_});
+				}
+
 				# Process $pos->{'callsign'}
-				# Process $pos->{'data'}
+	
 				$lastpos=$pos->{'position_id'} if ($lastpos < $pos->{'position_id'});
 			} # foreach
 			print "\nDone, Lastpos=".$lastpos."\n";
@@ -111,9 +112,6 @@ sub catch_hup {
 	#syslog('warning', 'Got HUP');
 	print "Got HUP\n";
 }
-
-
-
 
 __END__
 -- SQL Schema used for this script
@@ -161,60 +159,38 @@ CREATE TABLE positions_data (
 
 ONSTRAINT `acl_ibfk_2` FOREIGN KEY (`userid`) REFERENCES `passwd` (`id_passwd`) ON DELETE CASCADE
 
-{"position_id":"3939504","mission_id":"0","vehicle":"POP1","server_time":"2013-12-06 23:22:25.365001","gps_time":"2013-12-06 23:22:22","gps_lat":"50.931785","gps_lon":"-1.3857067","gps_alt":"12","gps_heading":"","gps_speed":"","picture":"","temp_inside":"13.2","data":"{\"uv\": \"-0.002\", \"temperature_external\": \"7.29\", \"light\": 0, \"temperature_external_ds\": \"6.3\", \"humidity\": 9289, \"pressure\": \"101600.0\", \"battery_raw\": \"4.93\", \"ir\": 0}","callsign":"ASTRA","sequence":"185"}, 
-
-
-                                           {
-                                             'sequence' => '185',
-                                             'gps_lat' => '50.931785',
-                                             'callsign' => 'ASTRA',
-                                             'position_id' => '3939504',
-                                             'gps_lon' => '-1.3857067',
-                                             'mission_id' => '0',
-                                             'data' => '{"uv": "-0.002", "temperature_external": "7.29", "light": 0, "temperatu
-re_external_ds": "6.3", "humidity": 9289, "pressure": "101600.0", "battery_raw": "4.93", "ir": 0}',
-                                             'temp_inside' => '13.2',
-                                             'gps_heading' => '',
-                                             'gps_speed' => '',
-                                             'server_time' => '2013-12-06 23:22:25.365001',
-                                             'gps_time' => '2013-12-06 23:22:22',
-                                             'vehicle' => 'POP1',
-                                             'gps_alt' => '12',
-                                             'picture' => ''
-                                           },
-                                           {
-                                             'sequence' => '186',
-                                             'gps_lat' => '50.9317867',
-                                             'callsign' => 'ASTRA',
-                                             'position_id' => '3939505',
-                                             'gps_lon' => '-1.3857083',
-                                             'mission_id' => '0',
-                                             'data' => '{"uv": 0, "temperature_external": "7.27", "light": 0, "temperature_exte
-rnal_ds": "6.3", "humidity": 9287, "pressure": "101610.0", "battery_raw": "4.94", "ir": 0}',
-                                             'temp_inside' => '13.1',
-                                             'gps_heading' => '',
-                                             'gps_speed' => '',
-                                             'server_time' => '2013-12-06 23:22:29.364475',
-                                             'gps_time' => '2013-12-06 23:22:26',
-                                             'vehicle' => 'POP1',
-                                             'gps_alt' => '12',
-                                             'picture' => ''
-                                           },
-                          {
-                            'sequence' => '1',
-                            'gps_lat' => '-33.9847',
-                            'callsign' => 'STRATOS',
-                            'position_id' => '3939696',
-                            'gps_lon' => '150.8848',
-                            'mission_id' => '0',
-                            'data' => '{"satellites": 0}',
-                            'temp_inside' => '',
-                            'gps_heading' => '',
-                            'gps_speed' => '0',
-                            'server_time' => '2013-12-06 23:35:46.65661',
-                            'gps_time' => '2013-12-06 00:00:00',
-                            'vehicle' => 'SAT1',
-                            'gps_alt' => '0',
-                            'picture' => ''
-                          },
+{
+  'sequence' => '186',
+  'gps_lat' => '50.9317867',
+  'callsign' => 'ASTRA',
+  'position_id' => '3939505',
+  'gps_lon' => '-1.3857083',
+  'mission_id' => '0',
+  'data' => '{"uv": 0, "temperature_external": "7.27", "light": 0, "temperature_external_ds": "6.3", "humidity": 9287, "pressure": "101610.0", "battery_raw": "4.94", "ir": 0}',
+  'temp_inside' => '13.1',
+  'gps_heading' => '',
+  'gps_speed' => '',
+  'server_time' => '2013-12-06 23:22:29.364475',
+  'gps_time' => '2013-12-06 23:22:26',
+  'vehicle' => 'POP1',
+  'gps_alt' => '12',
+  'picture' => ''
+},
+{
+  'sequence' => '1',
+  'gps_lat' => '-33.9847',
+  'callsign' => 'STRATOS',
+  'position_id' => '3939696',
+  'gps_lon' => '150.8848',
+  'mission_id' => '0',
+  'data' => '{"satellites": 0}',
+  'temp_inside' => '',
+  'gps_heading' => '',
+  'gps_speed' => '0',
+  'server_time' => '2013-12-06 23:35:46.65661',
+  'gps_time' => '2013-12-06 00:00:00',
+  'vehicle' => 'SAT1',
+  'gps_alt' => '0',
+  'picture' => ''
+},
 
