@@ -17,7 +17,7 @@ my %Options=(
   db_user     =>"spacenearer",
   db_pass     =>"",
   data_url    =>"http://spacenear.us/tracker/data.php",
-  max_records =>10,
+  max_records =>100,
   lock_file   =>"/tmp/snus2sql.pid"
 );
 
@@ -69,7 +69,7 @@ while ($loop){
 			my $json_out=decode_json($json);
 			my @positions=@{$json_out->{'positions'}{'position'}};
 			foreach my $pos (@positions){
-				print $pos->{'position_id'}. "\t";
+				print $pos->{'vehicle'}."(".$pos->{'position_id'}."),\t";
 				$addPosition->execute(
 					$pos->{'position_id'},
 					$pos->{'mission_id'},
@@ -88,19 +88,22 @@ while ($loop){
 					$pos->{'sequence'});
 
 				# Process Habitat data
-				my %data=%{decode_json($pos->{'data'})};
-				for (keys %data){
-					$addData->execute($pos->{'position_id'},$_,$data{$_});
+				if ($pos->{'data'} ne ""){
+					my %data=%{decode_json($pos->{'data'})};
+					for (keys %data){
+						$addData->execute($pos->{'position_id'},$_,$data{$_});
+					}
 				}
 
 				# Process Callsign data
-				print "\t".$pos->{'callsign'}."\n";
+				#print "\t(".$pos->{'callsign'}.")";
 				foreach (split(",",$pos->{'callsign'})){
-					print "\t".$_."\n";
+					print $_."\t";
 					$addCall->execute($pos->{'position_id'},$_);
 				}
 	
 				$lastpos=$pos->{'position_id'} if ($lastpos < $pos->{'position_id'});
+				print "\n";
 			} # foreach
 			print "\nDone, Lastpos=".$lastpos."\n";
 		} else { # if($json)
@@ -114,7 +117,7 @@ while ($loop){
 		sleep(60) if $loop;
 	}
 
-	sleep(1);
+	#sleep(1);
 } #while($loop)
 
 unlink $Options{'lock_file'};
@@ -174,6 +177,7 @@ CREATE TABLE positions_data (
 	KEY `position_id` (`position_id`)
 ) ENGINE=InnoDB;
 
+{"position_id":"3944630","mission_id":"0","vehicle":"VK4HIA_chase","server_time":"2013-12-07 05:15:06.497451","gps_time":"2013-12-07 05:15:05","gps_lat":"-26.7692583427","gps_lon":"153.112194808","gps_alt":"0.0751953125","gps_heading":"","gps_speed":"0","picture":"","temp_inside":"","data":"","callsign":"","sequence":""}
 
 
 
@@ -213,4 +217,5 @@ ONSTRAINT `acl_ibfk_2` FOREIGN KEY (`userid`) REFERENCES `passwd` (`id_passwd`) 
   'gps_alt' => '0',
   'picture' => ''
 },
+
 
