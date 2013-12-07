@@ -17,7 +17,7 @@ my %Options=(
   db_user     =>"spacenearer",
   db_pass     =>"",
   data_url    =>"http://spacenear.us/tracker/data.php",
-  lock_file   =>"/tmp/snus_data2sql.pid"
+  lock_file   =>"/tmp/snus2sql.pid"
 );
 
 # LOCK File
@@ -39,18 +39,17 @@ my $loop=1;
 $SIG{HUP}= \&catch_hup;
 $SIG{INT}= \&catch_hup;
 
-
 # Loop start
 
-my $dbh = DBI->connect("DBI:mysql:host=$Options{'db_host'};database=$Options{'db_database'}", $Options{'db_user'},$Options{'db_pass'});
-
-# Prep SQL Statements
-my $addPosition=$dbh->prepare("insert into positions values (?,?,?,?,MICROSECOND(?)/1e6,?,MICROSECOND(?)/1e6,?,?,?,?,?,?,?,?)");
-my $addCall=$dbh->prepare("insert into positions_call values (?,?)");
-my $addData=$dbh->prepare("insert into positions_data values (?,?,?)");
-
-DBI->trace( 2, 'dbitrace.log' );
 while ($loop){
+	my $dbh = DBI->connect("DBI:mysql:host=$Options{'db_host'};database=$Options{'db_database'}", $Options{'db_user'},$Options{'db_pass'});
+
+	# Prep SQL Statements
+	my $addPosition=$dbh->prepare("insert into positions values (?,?,?,?,MICROSECOND(?)/1e6,?,MICROSECOND(?)/1e6,?,?,?,?,?,?,?,?)");
+	my $addCall=$dbh->prepare("insert into positions_call values (?,?)");
+	my $addData=$dbh->prepare("insert into positions_data values (?,?,?)");
+
+	#DBI->trace( 2, 'dbitrace.log' );
 	if ($dbh){
 	# position_id: lastPosId,
 	# max_positions: 0
@@ -78,13 +77,23 @@ while ($loop){
 					$pos->{'picture'},
 					$pos->{'temp_inside'},
 					$pos->{'sequence'});
-				## Process $pos->{'callsign'}
+				# Process $pos->{'callsign'}
 				# Process $pos->{'data'}
 				$lastpos=$pos->{'position_id'} if ($lastpos < $pos->{'position_id'});
 			} # foreach
 			print "\nDone, Lastpos=".$lastpos."\n";
-		} # if($json)
-	} #if ($dbh){
+		} else { # if($json)
+			sleep(60) if $loop;
+		}
+	} else { #if ($dbh)
+		sleep(60) if $loop;
+	}
+
+	$addPosition->finish();
+	$addCall->finish();
+	$addData->finish();
+	$dbh->disconnect();
+	sleep(5);
 } #while($loop)
 
 unlink $Options{'lock_file'};
