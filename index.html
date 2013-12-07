@@ -33,9 +33,6 @@
              max-width: 100%;
              max-height: 70%;
              overflow-y: auto;
-             padding-left: 20px;
-             padding-right: 20px;
-             padding-bottom: 20px;
              font-family: Helvetica,"Lucida Grande",Verdana,Arial;
              font-size: 12px;
     }
@@ -58,8 +55,8 @@
     #box-payloads {
              position: absolute;
              top: 90px;
-             right: 0px;
-             width: 222px;
+             right: 8px;
+             width: 200px;
              max-width: 100%;
              max-height: 70%;
              overflow-y: auto;
@@ -68,6 +65,29 @@
              padding-bottom: 20px;
              font-family: Helvetica,"Lucida Grande",Verdana,Arial;
              font-size: 12px;
+            line-height: 0.75em;
+            display: none;
+    }
+    #box-graph {
+        position: absolute;
+        left: 30%;
+        top: 30%;
+        height: 50%;
+        width: 50%;
+        margin-left: -150px;
+        margin-top: -50px;
+        padding: 1em;
+        display: none;
+        font-family: Helvetica,"Lucida Grande",Verdana,Arial;
+        font-size: 12px;
+        line-height: 1.8em;
+    }
+    #graph-div {
+        height: 90%;
+        width: 100%;
+    }
+    .vehicle_box {
+        margin-top: 2.5em;
     }
     .payload {
     }
@@ -79,20 +99,29 @@
     <div id="map"></div>
     <div id="box-status" class="box">
             <h1 style="text-align:center;">HAB Tracker Map</h1>
+            <h4 class="page-loading" style="text-align:center;">Loading Data..</h4>
     </div>
     <div id="box-mobile-status" class="box">
             <h2 style="text-align:center;">HAB Tracker Map</h2>
+            <h4 class="page-loading" style="text-align:center;">Loading Data..</h4>
     </div>
     <div id="box-payloads" class="box">
+    </div>
+    <div id="box-graph" class="box">
+        <div id="graph-div"></div>
+        <br>
+        Click and Drag to zoom, Double-Click to reset zoom, <a href="#" class="graph_hide" style="text-align:center;">Click here to Close</a>
     </div>
 <script src="static/js/leaflet.js"></script>
 <script src="static/js/leaflet-google.js"></script>
 <script src="static/js/leaflet-bing.js"></script>
 <script src="static/js/moment.min.js"></script>
 <script src="static/js/jquery-1.10.2.min.js"></script>
+<script src="static/js/dygraph-combined.js"></script>
 <script src="apikeys.js"></script>
-<script src="https://maps.google.com/maps/api/js?v=3&key=AIzaSyDGKBRE7L7JvbXa3bskTLTOcuHjosSzp2s&sensor=false"></script>
+<script src="https://maps.google.com/maps/api/js?v=3&key=AIzaSyC9XjZwvS6zn_COxONWADDpJ7Fioe26tjo&sensor=false"></script>
 <script>
+    var pageStarting=true;
     var rxMarkers=[];
     var vehMarkers=[];
     var vehCircles=[];
@@ -103,6 +132,13 @@
 	var rxRefreshInterval=60;
 	var vehRefreshInterval=5;
 	var predRefreshInterval=60;
+	
+	var payloadData=[]; // This is a clone of data.php structure, and is equally inefficient :(
+	var currentGraphObj;
+    var currentGraphData
+	
+    var balloonColours=[];
+    var carColours=[];
 	
 	payloadCallsign=getUrlVars().filter;
 	
@@ -128,12 +164,7 @@
 	// TODO: Add bounds box for UK only
     }
 
-    if (typeof bing_os != 'undefined') {
-        map.addLayer(bing_os);
-        map.setZoom(10);
-    } else {
-        map.addLayer(osm);
-    }
+    map.addLayer(osm);
     
     var ggl = new L.Google();
     var gglt = new L.Google('TERRAIN');
@@ -164,10 +195,54 @@
         popupAnchor: [0, -32]
     });
     
-    function balloonIconFactory(iconId,altitude) { // Just to annoy Java geeks
-        //TODO use iconId to select red/green/blue balloon icon
+    function chasecarIconFactory(iconCallsign) {
+        if(typeof carColours['blue']=='undefined') {
+            var iconColour='static/images/car-blue.png';
+            carColours['blue'] = iconCallsign;
+        } else {
+            if(typeof carColours['green']=='undefined') {
+                var iconColour='static/images/car-green.png';
+                carColours['green'] = iconCallsign;
+            } else {
+                if(typeof carColours['red']=='undefined') {
+                    var iconColour='static/images/car-red.png';
+                    carColours['red'] = iconCallsign;
+                } else {
+                    // Give up, make it blue
+                    var iconColour='static/images/car-blue.png';
+                }
+            }
+        }
+       
         return L.icon({
-            iconUrl: 'static/images/balloon-red.png',
+            iconUrl: iconColour,
+            iconSize:     [55, 25], // size of the icon
+            iconAnchor:   [28, 25], // point of the icon which will correspond to marker's location
+            popupAnchor: [0, -25]
+        });
+    }
+    
+    function balloonIconFactory(iconCallsign,altitude) {
+        if(typeof balloonColours['red']=='undefined') {
+            var iconColour='static/images/balloon-red.png';
+            balloonColours['red'] = iconCallsign;
+        } else {
+            if(typeof balloonColours['blue']=='undefined') {
+                var iconColour='static/images/balloon-blue.png';
+                balloonColours['blue'] = iconCallsign;
+            } else {
+                if(typeof balloonColours['green']=='undefined') {
+                    var iconColour='static/images/balloon-green.png';
+                    balloonColours['green'] = iconCallsign;
+                } else {
+                    // Give up, make it red
+                    var iconColour='static/images/balloon-red.png';
+                }
+            }
+       }
+            
+        return L.icon({
+            iconUrl: iconColour,
             iconSize:     [46, 84], // size of the icon
             iconAnchor:   [23, 80+Math.round(altitude/1000)], // point of the icon which will correspond to marker's location
             shadowUrl: 'static/images/shadow.png',
@@ -193,6 +268,50 @@
     setInterval(refreshReceivers,rxRefreshInterval*1000);
     setInterval(refreshVehicles,vehRefreshInterval*1000);
     setInterval(refreshPredictions,predRefreshInterval*1000);
+    
+    $(document.body).on('click', '.graph_show' ,function(event){ // target id will be eg. FIZZLE_grphbtn
+        $("#box-graph").show();
+        var wantedVehicle = event.currentTarget.id.substring(0,event.currentTarget.id.length-8); // eg FIZZLE
+        if($.inArray('graph_alt', event.currentTarget.classList)!=-1) {
+            create_graph(wantedVehicle, false, 'gps_alt', 'Altitude', 'm');
+        } else if($.inArray('graph_inttemp', event.currentTarget.classList)!=-1) {
+            create_graph(wantedVehicle, false, 'temp_inside', 'Internal Temperature', '°c');
+        } else if($.inArray('graph_exttemp', event.currentTarget.classList)!=-1) {
+            create_graph(wantedVehicle, true, 'temperature_external', 'External Temperature', '°c');
+        } else if($.inArray('graph_battraw', event.currentTarget.classList)!=-1) {
+            create_graph(wantedVehicle, true, 'battery_raw', 'Raw Battery Value', '?');
+        } else if($.inArray('graph_pressure', event.currentTarget.classList)!=-1) {
+            create_graph(wantedVehicle, true, 'pressure', 'Pressure', 'mbar');
+        }
+    });
+        
+    function create_graph( callsign, dataArray, dataKey, dataName, dataUnits) {
+        currentGraphData = [];
+        for (var i=0; i<payloadData[callsign].length; i++) {
+            currentGraphData[i] = [];
+            currentGraphData[i][0] = moment(payloadData[callsign][i]['gps_time'], "YYYY-MM-DD HH:mm:ss").toDate(); // TODO: Write a custom, faster parser?
+            if(dataArray) {
+                currentGraphData[i][1] = Number(JSON.parse(payloadData[callsign][i]['data'])[dataKey]);
+            } else {
+                currentGraphData[i][1] = Number(payloadData[callsign][i][dataKey]);
+            }
+        }
+        currentGraphObj = new Dygraph(
+            document.getElementById("graph-div"),
+            currentGraphData, {
+                title: callsign+" "+dataName,
+                //fillGraph: true,
+                ylabel: dataName+" ("+dataUnits+")",
+                labels: ['Time', dataName]
+        });
+    }
+    
+    $('.graph_hide').click(function() {
+        $("#box-graph").hide();
+	currentGraphObj.destroy();
+        delete currentGraphObj;
+        currentGraphData = null;
+    });
     
     function refreshReceivers() {
         $.ajax({
@@ -222,21 +341,44 @@
 	        type: "GET",
 	        dataType: 'json',
 	        data: {
-	            vehicles: payloadCallsign, //TODO: Test with multiple payloads and remove filter
-	            format: "json",
+                format: "json",
 	            position_id: lastPosId,
 	            max_positions: 0
 	        },
 	        success: function( jsonData ) {
 	            data = jsonData.positions.position;
 	            if(data.length!=0) {
-	                lastIndex=data.length-1;
-	                if(lastPosId==0) map.setView([data[lastIndex].gps_lat,data[lastIndex].gps_lon],8);
-		            setVehPos(data[lastIndex]);
-		            setVehInfo(data[lastIndex]);
-		            drawVehTail(data);
-		            drawVehReceivers(data[lastIndex])
-		            lastPosId=data[lastIndex].position_id;
+	                var dataVehicles=[];
+	                for (var i=0; i<data.length; i++) {
+	                    if(typeof dataVehicles[data[i].vehicle]=='undefined') {
+	                        dataVehicles[data[i].vehicle]=1;
+	                        tmpData = $.grep(data, function( element, index ) {
+                                return ( element.vehicle==data[i].vehicle );
+                            });
+	                        lastIndex=tmpData.length-1;
+	                        callsignLen = data[i].vehicle.length;
+	                        if(data[i].vehicle.substring(callsignLen-6,callsignLen)!="_chase") {
+	                            if(lastPosId==0) map.setView([tmpData[lastIndex].gps_lat,tmpData[lastIndex].gps_lon],8);
+		                        setVehPos(tmpData[lastIndex]);
+		                        setVehInfo(tmpData[lastIndex]);
+		                        drawVehTail(tmpData);
+		                        drawVehReceivers(tmpData[lastIndex]);
+		                    } else {
+		                        setCarPos(tmpData[lastIndex]);
+		                    }
+		                    if(lastPosId<tmpData[lastIndex].position_id) {
+		                        lastPosId=tmpData[lastIndex].position_id;
+		                    }
+		                    if(typeof payloadData[data[i].vehicle]=='undefined') {
+		                        payloadData[data[i].vehicle]=[];
+		                    }
+		                    $.merge(payloadData[data[i].vehicle],tmpData);
+		                }
+		            }
+		            if(pageStarting) {
+		                pageStarting=false;
+		                $(".page-loading").hide();
+		            }
 		        }
 	        }
         });
@@ -288,32 +430,43 @@
     }
     
     function setVehPos(row) {
-        if(vehMarkers[row.mission_id]) {
-        	vehMarkers[row.mission_id].closePopup(); // TODO: Leaflet bug where it doesn't move the popup (was in v0.6?)
-            vehMarkers[row.mission_id].setLatLng([row.gps_lat,row.gps_lon]);
-            vehMarkers[row.mission_id].bindPopup(popupHtml(row));
-            vehMarkers[row.mission_id].update(); // TODO: Do we really need to call .update() the whole time?
-            vehCircles[row.mission_id][0].setLatLng([row.gps_lat,row.gps_lon]);
-            vehCircles[row.mission_id][1].setLatLng([row.gps_lat,row.gps_lon]);
-            vehCircles[row.mission_id][0].setRadius(Math.sqrt(12.756*row.gps_alt)*1000);
-            vehCircles[row.mission_id][1].setRadius(subhorizon_radius(row.gps_alt));
+        if(vehMarkers[row.vehicle]) {
+            vehMarkers[row.vehicle].setLatLng([row.gps_lat,row.gps_lon]);
+            vehMarkers[row.vehicle].setPopupContent(popupHtml(row));
+            vehCircles[row.vehicle][0].setLatLng([row.gps_lat,row.gps_lon]);
+            vehCircles[row.vehicle][1].setLatLng([row.gps_lat,row.gps_lon]);
+            vehCircles[row.vehicle][0].setRadius(Math.sqrt(12.756*row.gps_alt)*1000);
+            vehCircles[row.vehicle][1].setRadius(subhorizon_radius(row.gps_alt));
         } else {
-            vehMarkers[row.mission_id] = L.marker([row.gps_lat,row.gps_lon], {
+            vehMarkers[row.vehicle] = L.marker([row.gps_lat,row.gps_lon], {
                 title: row.vehicle,
-                icon: balloonIconFactory(row.mission_id,row.gps_alt)
+                icon: balloonIconFactory(row.vehicle,row.gps_alt)
             }).addTo(map);
-            vehMarkers[row.mission_id].bindPopup(popupHtml(row));
-            vehCircles[row.mission_id]=[];
-            vehCircles[row.mission_id][0] = L.circle(
+            vehMarkers[row.vehicle].bindPopup(popupHtml(row));
+            vehCircles[row.vehicle]=[];
+            vehCircles[row.vehicle][0] = L.circle(
                 [row.gps_lat,row.gps_lon],
                 Math.sqrt(12.756*row.gps_alt)*1000,
                 {color: "#0000FF", fill: false}
             ).addTo(map);
-            vehCircles[row.mission_id][1] = L.circle(
+            vehCircles[row.vehicle][1] = L.circle(
                 [row.gps_lat,row.gps_lon],
                 subhorizon_radius(row.gps_alt),
                 {color: "#00FF00", fill: false}
             ).addTo(map);
+        }
+    }
+    
+    function setCarPos(row) {
+        if(vehMarkers[row.vehicle]) {
+            vehMarkers[row.vehicle].setLatLng([row.gps_lat,row.gps_lon]);
+            vehMarkers[row.vehicle].setPopupContent(popupHtml(row));
+        } else {
+            vehMarkers[row.vehicle] = L.marker([row.gps_lat,row.gps_lon], {
+                title: row.vehicle,
+                icon: chasecarIconFactory(row.vehicle)
+            }).addTo(map);
+            vehMarkers[row.vehicle].bindPopup(popupHtml(row));
         }
     }
     
@@ -349,20 +502,28 @@
             container.setAttribute('class', 'payload');
             container.setAttribute('id', 'vehicle-' + row.vehicle);
             document.getElementById("box-payloads").appendChild(container);
+            $("#box-payloads").show();
         }
 
-        var html= '<ul><li>Payload: '  + row.vehicle + '</li>'
-                +     '<li>GPS Time: '  + row.gps_time + '</li>'
-                +     '<li>Latitude: '  + row.gps_lat + '</li>'
-                +     '<li>Longitude: '  + row.gps_lon + '</li>'
-                +     '<li>Altitude: '  + row.gps_alt + '</li>';
+        var html= '<h3>'  + row.vehicle + '</h3>'
+                +     '<h4>GPS Time: '  + row.gps_time + '</h4>'
+                +     '<h4>Latitude: '  + row.gps_lat + '</h4>'
+                +     '<h4>Longitude: '  + row.gps_lon + '</h4>'
+                +     '<h4><a href="#" id="'+row.vehicle+'_grphbtn" class="graph_show graph_alt">Altitude:</a> '  + row.gps_alt + ' m</h4>';
+        if(row.temp_inside!="") {
+                html+='<h4><a href="#" id="'+row.vehicle+'_grphbtn" class="graph_show graph_inttemp">Internal Temperature:</a> '  + row.temp_inside + ' °c</h4>';
+        }
+        var extraData=JSON.parse(row.data);
+        if(typeof extraData.temperature_external!='undefined') {
+                html+='<h4><a href="#" id="'+row.vehicle+'_grphbtn" class="graph_show graph_exttemp">External Temperature:</a> '  + extraData.temperature_external + ' °c</h4>';
+        }
 
         container.innerHTML = html;
     }
    
     function drawVehTail(allRows) {
         var allLength = allRows.length;
-        var tmp_vehId = allRows[0].mission_id;
+        var tmp_vehId = allRows[0].vehicle;
         if(vehTails[tmp_vehId]) {
             for (var i=0; i<allLength; i++) {
                 vehTails[tmp_vehId].addLatLng(new L.LatLng(allRows[i].gps_lat, allRows[i].gps_lon));
@@ -378,10 +539,8 @@
     
     function drawPredBurst(row,vehicle) {
         if(vehPredictions[vehicle][1]) {
-        	vehPredictions[vehicle][1].closePopup(); // TODO: Leaflet bug where it doesn't move the popup (was in v0.6?)
             vehPredictions[vehicle][1].setLatLng([row.lat,row.lon]);
-            vehPredictions[vehicle][1].bindPopup(moment.unix(row.time).format("HH:mm:ss")+" UTC");
-            vehPredictions[vehicle][1].update();
+            vehPredictions[vehicle][1].setPopupContent(moment.unix(row.time).format("HH:mm:ss")+" UTC");
         } else {
             vehPredictions[vehicle][1] = L.marker([row.lat,row.lon], {
                 title: "Burst Prediction",
@@ -393,10 +552,8 @@
     
     function drawPredTarget(row,vehicle) {
         if(vehPredictions[vehicle][2]) {
-        	vehPredictions[vehicle][2].closePopup(); // TODO: Leaflet bug where it doesn't move the popup (was in v0.6?)
             vehPredictions[vehicle][2].setLatLng([row.lat,row.lon]);
-            vehPredictions[vehicle][2].bindPopup(moment.unix(row.time).format("HH:mm:ss")+" UTC");
-            vehPredictions[vehicle][2].update();
+            vehPredictions[vehicle][2].setPopupContent(moment.unix(row.time).format("HH:mm:ss")+" UTC");
         } else {
             vehPredictions[vehicle][2] = L.marker([row.lat,row.lon], {
                 title: "Landing Prediction",
