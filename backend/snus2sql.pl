@@ -18,6 +18,7 @@ my %Options=(
   db_pass     =>"",
   data_url    =>"http://spacenear.us/tracker/data.php",
   max_records =>100,
+  sleep_time  =>3,
   lock_file   =>"/tmp/snus2sql.pid"
 );
 
@@ -120,12 +121,7 @@ while ($loop){
 		sleep(60) if $loop;
 	}
 
-	if ($entries<$Options{'max_records'}){
-		print "Sleeping\n";
-		sleep(3);
-	} else {
-		print "No Sleep!\n";
-	}
+	sleep($Options{'sleep_time'}) if ($entries<$Options{'max_records'});
 } #while($loop)
 
 unlink $Options{'lock_file'};
