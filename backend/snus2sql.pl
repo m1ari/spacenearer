@@ -17,7 +17,7 @@ my %Options=(
   db_user     =>"spacenearer",
   db_pass     =>"",
   data_url    =>"http://spacenear.us/tracker/data.php",
-  max_records =>5,
+  max_records =>10,
   lock_file   =>"/tmp/snus2sql.pid"
 );
 
@@ -41,21 +41,34 @@ $SIG{INT}= \&catch_hup;
 
 while ($loop){
 	my $dbh = DBI->connect("DBI:mysql:host=$Options{'db_host'};database=$Options{'db_database'}", $Options{'db_user'},$Options{'db_pass'});
-	# TODO if lastpos=0 we should get the last value from the DB
 
-	# Prep SQL Statements
-	my $addPosition=$dbh->prepare("insert into positions values (?,?,?,?,MICROSECOND(?)/1e6,?,MICROSECOND(?)/1e6,?,?,?,?,?,?,?,?)");
-	my $addCall=$dbh->prepare("insert into positions_call values (?,?)");
-	my $addData=$dbh->prepare("insert into positions_data values (?,?,?)");
-
-	#DBI->trace( 2, 'dbitrace.log' );
+	# Check we're connected to the DB
 	if ($dbh){
+
+		# Prep SQL Statements
+		my $addPosition=$dbh->prepare("insert into positions values (?,?,?,?,MICROSECOND(?)/1e6,?,MICROSECOND(?)/1e6,?,?,?,?,?,?,?,?)");
+		my $addCall=$dbh->prepare("insert into positions_call values (?,?)");
+		my $addData=$dbh->prepare("insert into positions_data values (?,?,?)");
+
+		# If lastpos is 0 get the largest position_id from the db
+		if ($lastpos==0){
+			my $getMaxPos=$dbh->prepare("select max(position_id) as lastPosID from positions");
+			$getMaxPos->execute();
+			if ($getMaxPos->rows() ==1 ){
+				my $row=$getMaxPos->fetchrow_hashref;
+				if (defined($row->{'lastPosID'})){
+					$lastpos=$row->{'lastPosID'};
+				}
+			}
+			$getMaxPos->finish();
+		}
+
+		# Get data.php json data
 		my $json = get($Options{'data_url'}."?format=json&position_id=".$lastpos."&max_positions=".$Options{'max_records'});
 		if ($json){
 			my $json_out=decode_json($json);
 			my @positions=@{$json_out->{'positions'}{'position'}};
 			foreach my $pos (@positions){
-				#print "======================================================================\n";
 				print $pos->{'position_id'}. "\t";
 				$addPosition->execute(
 					$pos->{'position_id'},
@@ -73,12 +86,19 @@ while ($loop){
 					$pos->{'picture'},
 					$pos->{'temp_inside'},
 					$pos->{'sequence'});
+
+				# Process Habitat data
 				my %data=%{decode_json($pos->{'data'})};
 				for (keys %data){
 					$addData->execute($pos->{'position_id'},$_,$data{$_});
 				}
 
-				# Process $pos->{'callsign'}
+				# Process Callsign data
+				print "\t".$pos->{'callsign'}."\n";
+				foreach (split(",",$pos->{'callsign'})){
+					print "\t".$_."\n";
+					$addCall->execute($pos->{'position_id'},$_);
+				}
 	
 				$lastpos=$pos->{'position_id'} if ($lastpos < $pos->{'position_id'});
 			} # foreach
@@ -86,15 +106,15 @@ while ($loop){
 		} else { # if($json)
 			sleep(60) if $loop;
 		}
+		$addPosition->finish();
+		$addCall->finish();
+		$addData->finish();
+		$dbh->disconnect();
 	} else { #if ($dbh)
 		sleep(60) if $loop;
 	}
 
-	$addPosition->finish();
-	$addCall->finish();
-	$addData->finish();
-	$dbh->disconnect();
-	sleep(5);
+	sleep(1);
 } #while($loop)
 
 unlink $Options{'lock_file'};
