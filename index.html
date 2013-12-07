@@ -69,6 +69,9 @@
              font-family: Helvetica,"Lucida Grande",Verdana,Arial;
              font-size: 12px;
     }
+    .payload {
+    }
+
 </style>
 <link rel="stylesheet" href="static/css/leaflet.css" />
 </head>
@@ -339,12 +342,12 @@
     }
             
     function setVehInfo(row){
-        var container = document.getElementById('vehicle' + row.vehicle);
+        var container = document.getElementById('vehicle-' + row.vehicle);
         if (container == null) {
             container = document.createElement('div');
-            container.setAttribute('className', 'vehicle_box');
-            container.setAttribute('class', 'vehicle_box');
-            container.setAttribute('id', 'vehicle' + row.vehicle);
+            container.setAttribute('className', 'payload');
+            container.setAttribute('class', 'payload');
+            container.setAttribute('id', 'vehicle-' + row.vehicle);
             document.getElementById("box-payloads").appendChild(container);
         }
 
