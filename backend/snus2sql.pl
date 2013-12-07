@@ -32,6 +32,7 @@ close _LOCK;
 
 my $lastpos=0;
 my $loop=1;
+my $entries=0;
 
 # Syslog
 #
@@ -40,6 +41,7 @@ $SIG{HUP}= \&catch_hup;
 $SIG{INT}= \&catch_hup;
 
 while ($loop){
+	$entries=0;	# Reset Counter
 	my $dbh = DBI->connect("DBI:mysql:host=$Options{'db_host'};database=$Options{'db_database'}", $Options{'db_user'},$Options{'db_pass'});
 
 	# Check we're connected to the DB
@@ -69,6 +71,7 @@ while ($loop){
 			my $json_out=decode_json($json);
 			my @positions=@{$json_out->{'positions'}{'position'}};
 			foreach my $pos (@positions){
+				$entries++;
 				print $pos->{'vehicle'}."(".$pos->{'position_id'}."),\t";
 				$addPosition->execute(
 					$pos->{'position_id'},
@@ -117,7 +120,12 @@ while ($loop){
 		sleep(60) if $loop;
 	}
 
-	#sleep(1);
+	if ($entries<$Options{'max_records'}){
+		print "Sleeping\n";
+		sleep(3);
+	} else {
+		print "No Sleep!\n";
+	}
 } #while($loop)
 
 unlink $Options{'lock_file'};
