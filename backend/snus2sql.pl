@@ -19,7 +19,7 @@ my %Options=(
   data_url    =>"http://spacenear.us/tracker/data.php",
   max_records =>100,
   sleep_time  =>3,
-  lock_file   =>"/tmp/snus2sql.pid"
+  lock_file   =>$ENV{"HOME"} . "/run/snus2sql.pid"
 );
 
 if  ( -f $Options{'lock_file'}){
@@ -27,7 +27,7 @@ if  ( -f $Options{'lock_file'}){
 	exit -1;
 }
 open (_LOCK, ">".$Options{'lock_file'}) or die "Unable to create lockfile\n";
-# &daemonize;
+&daemonize;
 print _LOCK "$$";
 close _LOCK;
 
@@ -36,11 +36,13 @@ my $loop=1;
 my $entries=0;
 
 # Syslog
-#
-# Signal Handler
+setlogsock('unix');
+openlog('snus2sql', 'cons,pid', 'local1');
+
 $SIG{HUP}= \&catch_hup;
 $SIG{INT}= \&catch_hup;
 
+syslog('info', 'Starting');
 while ($loop){
 	$entries=0;	# Reset Counter
 	my $dbh = DBI->connect("DBI:mysql:host=$Options{'db_host'};database=$Options{'db_database'}", $Options{'db_user'},$Options{'db_pass'});
@@ -73,7 +75,7 @@ while ($loop){
 			my @positions=@{$json_out->{'positions'}{'position'}};
 			foreach my $pos (@positions){
 				$entries++;
-				print $pos->{'vehicle'}."(".$pos->{'position_id'}."),\t";
+				my $logmsg=$pos->{'vehicle'}."(".$pos->{'position_id'}."),\t";
 				$addPosition->execute(
 					$pos->{'position_id'},
 					$pos->{'mission_id'},
@@ -100,16 +102,14 @@ while ($loop){
 				}
 
 				# Process Callsign data
-				#print "\t(".$pos->{'callsign'}.")";
 				foreach (split(",",$pos->{'callsign'})){
-					print $_."\t";
+					$logmsg .= $_."\t";
 					$addCall->execute($pos->{'position_id'},$_);
 				}
 	
 				$lastpos=$pos->{'position_id'} if ($lastpos < $pos->{'position_id'});
-				print "\n";
+				syslog('info',$logmsg);
 			} # foreach
-			print "\nDone, Lastpos=".$lastpos."\n";
 		} else { # if($json)
 			sleep(60) if $loop;
 		}
@@ -136,8 +136,7 @@ sub daemonize {
 
 sub catch_hup {
 	$loop=0;
-	#syslog('warning', 'Got HUP');
-	print "Got HUP\n";
+	syslog('warning', 'Got HUP');
 }
 
 __END__
@@ -181,45 +180,25 @@ CREATE TABLE positions_data (
 	KEY `position_id` (`position_id`)
 ) ENGINE=InnoDB;
 
-{"position_id":"3944630","mission_id":"0","vehicle":"VK4HIA_chase","server_time":"2013-12-07 05:15:06.497451","gps_time":"2013-12-07 05:15:05","gps_lat":"-26.7692583427","gps_lon":"153.112194808","gps_alt":"0.0751953125","gps_heading":"","gps_speed":"0","picture":"","temp_inside":"","data":"","callsign":"","sequence":""}
+==== End of Schema ====
+
 
 
 
 ONSTRAINT `acl_ibfk_2` FOREIGN KEY (`userid`) REFERENCES `passwd` (`id_passwd`) ON DELETE CASCADE
 
-{
-  'sequence' => '186',
-  'gps_lat' => '50.9317867',
-  'callsign' => 'ASTRA',
-  'position_id' => '3939505',
-  'gps_lon' => '-1.3857083',
-  'mission_id' => '0',
-  'data' => '{"uv": 0, "temperature_external": "7.27", "light": 0, "temperature_external_ds": "6.3", "humidity": 9287, "pressure": "101610.0", "battery_raw": "4.94", "ir": 0}',
-  'temp_inside' => '13.1',
-  'gps_heading' => '',
-  'gps_speed' => '',
-  'server_time' => '2013-12-06 23:22:29.364475',
-  'gps_time' => '2013-12-06 23:22:26',
-  'vehicle' => 'POP1',
-  'gps_alt' => '12',
-  'picture' => ''
-},
-{
-  'sequence' => '1',
-  'gps_lat' => '-33.9847',
-  'callsign' => 'STRATOS',
-  'position_id' => '3939696',
-  'gps_lon' => '150.8848',
-  'mission_id' => '0',
-  'data' => '{"satellites": 0}',
-  'temp_inside' => '',
-  'gps_heading' => '',
-  'gps_speed' => '0',
-  'server_time' => '2013-12-06 23:35:46.65661',
-  'gps_time' => '2013-12-06 00:00:00',
-  'vehicle' => 'SAT1',
-  'gps_alt' => '0',
-  'picture' => ''
-},
+http://spacenear.us/tracker/data.php
+{"positions": {"position": [
+{"position_id":"3944630","mission_id":"0","vehicle":"VK4HIA_chase","server_time":"2013-12-07 05:15:06.497451","gps_time":"2013-12-07 05:15:05","gps_lat":"-26.7692583427","gps_lon":"153.112194808","gps_alt":"0.0751953125","gps_heading":"","gps_speed":"0","picture":"","temp_inside":"","data":"","callsign":"","sequence":""}
+{"position_id":"3939504","mission_id":"0","vehicle":"POP1","server_time":"2013-12-06 23:22:25.365001","gps_time":"2013-12-06 23:22:22","gps_lat":"50.931785","gps_lon":"-1.3857067","gps_alt":"12","gps_heading":"","gps_speed":"","picture":"","temp_inside":"13.2","data":"{\"uv\": \"-0.002\", \"temperature_external\": \"7.29\", \"light\": 0, \"temperature_external_ds\": \"6.3\", \"humidity\": 9289, \"pressure\": \"101600.0\", \"battery_raw\": \"4.93\", \"ir\": 0}","callsign":"ASTRA","sequence":"185"}
+]}} 
 
+http://spacenear.us/tracker/receivers.php
+[
+{"lat": 51.247592, "alt": 117.0, "lon": -1.177061, "name": "M0CJM", "description": "\n<font size=\"-2\"><BR>\n<B>Radio: </B>Kenwood TS2000 &amp; Signalink USB<BR>\n<B>Antenna: </B>Triband Vertical<BR>\n<B>Last Contact: </B>7 hours ago<BR>\n</font>\n"},
+{"lat": 50.935265, "alt": 0.0, "lon": -1.393789, "name": "ASTRA", "description": "\n<font size=\"-2\"><BR>\n<B>Radio: </B>FT-817<BR>\n<B>Antenna: </B>2m/70cms Colinear<BR>\n<B>Last Contact: </B>4 hours ago<BR>\n</font>\n"} 
+{"lat": 45.380844, "alt": 236.0, "lon": 4.820123, "name": "F4UGF", "description": "\n<font size=\"-2\"><BR>\n<B>Radio: </B>FT-817<BR>\n<B>Antenna: </B>QUAGI UHF V<BR>\n<B>Last Contact: </B>13 hours ago<BR>\n</font>\n"}
+]
+
+http://spacenear.us/tracker/get_predictions.php
 
